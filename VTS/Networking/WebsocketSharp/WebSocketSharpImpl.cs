@@ -1,142 +1,107 @@
 ﻿using System;
-using System.Text;
 using System.Collections.Concurrent;
-using UnityEngine;
 using WebSocketSharp;
 
-namespace VTS.Networking.Impl {
-
-    public class WebSocketSharpImpl : IWebSocket {
-        private static UTF8Encoding ENCODER = new UTF8Encoding();
-
+// GOES INTO STREAMER.bot
+namespace VTS.Networking.Impl
+{
+    public class WebSocketSharpImpl : IWebSocket
+    {
         private WebSocket _socket;
         private ConcurrentQueue<string> _intakeQueue = new ConcurrentQueue<string>();
+
         private bool _attemptReconnect = false;
 
-        private System.Action _onConnect = () => {};
-        private System.Action _onDisconnect = () => {};
-        private System.Action _onError = () => {};
+        private Action _onConnect = () => { };
+        private Action _onDisconnect = () => { };
+        private Action _onError = () => { };
         private string _url = "";
 
-        public WebSocketSharpImpl(){
-            this._intakeQueue = new ConcurrentQueue<string>();
+        public WebSocketSharpImpl()
+        {
+            _intakeQueue = new ConcurrentQueue<string>();
         }
 
-        public string GetNextResponse(){
-            string response = null;
-            this._intakeQueue.TryDequeue(out response);
+        public string GetNextResponse()
+        {
+            _intakeQueue.TryDequeue(out string response);
+
             return response;
         }
 
-        public bool IsConnecting(){
-            return this._socket != null && this._socket.ReadyState == WebSocketState.Connecting;
+        public bool IsConnecting()
+        {
+            return _socket?.ReadyState == WebSocketState.Connecting;
         }
 
-        public bool IsConnectionOpen() {
-            return this._socket != null && this._socket.ReadyState == WebSocketState.Open;
+        public bool IsConnectionOpen()
+        {
+            return _socket?.ReadyState == WebSocketState.Open;
         }
 
-        public void Send(string message){
-            // byte[] buffer = ENCODER.GetBytes(message);
-            this._socket.SendAsync(message, (success) => {});
+        public void Send(string message)
+        {
+            _socket.SendAsync(message, (success) => { });
         }
 
-        public void Start(string URL, Action onConnect, Action onDisconnect, Action onError) {
-            this._url = URL;
-            if(this._socket != null){
-                this._socket.Close();
-            }
-            this._socket = new WebSocket(this._url);
-            this._socket.WaitTime = TimeSpan.FromSeconds(10);
-            this._onConnect = onConnect;
-            this._onDisconnect = onDisconnect;
-            this._onError = onError;
-            this._socket.OnMessage += (sender, e) => {
-                MainThreadUtil.Run(() => {
-                    if(e != null && e.IsText){
-                        this._intakeQueue.Enqueue(e.Data); 
-                    }
-                });
-            };
-            this._socket.OnOpen += (sender, e) => { 
-                MainThreadUtil.Run(() => {
-                    this._onConnect();
-                    Debug.Log(string.Format("{0} Socket open!", this._socket.Url.Host));
-                    this._attemptReconnect = true;
-                });
-            };
-            this._socket.OnError += (sender, e) => { 
-                MainThreadUtil.Run(() => {
-                    Debug.LogError(string.Format("{0} Socket error...", this._socket.Url.Host));
-                    if(e != null){
-                        Debug.LogError(string.Format("'{0}', {1}", e.Message, e.Exception));
-                    }
-                    this._onError();
-                });
-            };
-            this._socket.OnClose += (sender, e) => { 
-                MainThreadUtil.Run(() => {
-                    Debug.Log(string.Format("{0} Socket closing: {1}, '{2}', {3}", this._socket.Url.Host, e.Code, e.Reason, e.WasClean));
-                    this._onDisconnect();
-                    if(this._attemptReconnect && !e.WasClean){
-                        Reconnect();
-                    }
-                });
-            };
+        public void Start(string URL, Action onConnect, Action onDisconnect, Action onError)
+        {
+            _url = URL;
 
-            this._socket.ConnectAsync();
-        }
+            _socket?.Close();
 
-        public void Stop(){
-            this._attemptReconnect = false;
-            if(this._socket != null && this._socket.IsAlive){
-                this._socket.Close();
-            }
-        }
-
-        private void Reconnect(){
-            Start(this._url, this._onConnect, this._onDisconnect, this._onError);
-        }
-    }
-
-    /// <summary>
-    /// Helper class for queueing method calls on to the main thread, which is necessary for most Unity methods.
-    /// This class is not necessary for non-Unity uses.
-    /// </summary>
-    public class MainThreadUtil : MonoBehaviour {
-        private static MainThreadUtil INSTANCE;
-        public static MainThreadUtil Instance { get { return INSTANCE; } } 
-        private static ConcurrentQueue<System.Action> CALL_QUEUE = new ConcurrentQueue<Action>();
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        public static void Setup(){
-            INSTANCE = new GameObject("MainThreadUtil").AddComponent<MainThreadUtil>();
-        }
-
-        private void Awake(){
-            gameObject.hideFlags = HideFlags.HideAndDontSave;
-            DontDestroyOnLoad(gameObject);
-        }
-
-        /// <summary>
-        /// Enqueue an action to be run on the main Unity thread.
-        /// </summary>
-        /// <param name="action">The action to run</param>
-        public static void Run(System.Action action){
-            CALL_QUEUE.Enqueue(action);
-        }
-
-        private void Update(){
-            do{
-                System.Action action = null;
-                if(CALL_QUEUE.Count > 0 && CALL_QUEUE.TryDequeue(out action)){
-                    try{
-                        action();
-                    }catch(Exception e){
-                        Debug.LogError(String.Format("Error from socket: {0}", e.StackTrace));
-                    }
+            _socket = new WebSocket(_url);
+            _socket.WaitTime = TimeSpan.FromSeconds(10);
+            _onConnect = onConnect;
+            _onDisconnect = onDisconnect;
+            _onError = onError;
+            _socket.OnMessage += (sender, e) =>
+            {
+                if (e != null && e.IsText)
+                {
+                    _intakeQueue.Enqueue(e.Data);
                 }
-            }while(CALL_QUEUE.Count > 0);
+            };
+            _socket.OnOpen += (sender, e) =>
+            {
+                _onConnect();
+                Console.WriteLine(string.Format("{0} Socket open!", _socket.Url.Host));
+                _attemptReconnect = true;
+            };
+            _socket.OnError += (sender, e) =>
+            {
+                Console.WriteLine(string.Format("{0} Socket error...", _socket.Url.Host));
+                if (e != null)
+                {
+                    Console.WriteLine(string.Format("'{0}', {1}", e.Message, e.Exception));
+                }
+                _onError();
+            };
+            _socket.OnClose += (sender, e) =>
+            {
+                Console.WriteLine(string.Format("{0} Socket closing: {1}, '{2}', {3}", _socket.Url.Host, e.Code, e.Reason, e.WasClean));
+                _onDisconnect();
+                if (_attemptReconnect && !e.WasClean)
+                {
+                    Reconnect();
+                }
+            };
+
+            _socket.ConnectAsync();
+        }
+
+        public void Stop()
+        {
+            _attemptReconnect = false;
+            if (_socket != null && _socket.IsAlive)
+            {
+                _socket.Close();
+            }
+        }
+
+        private void Reconnect()
+        {
+            Start(_url, _onConnect, _onDisconnect, _onError);
         }
     }
 }

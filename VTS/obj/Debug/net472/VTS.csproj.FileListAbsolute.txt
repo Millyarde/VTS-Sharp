@@ -1,0 +1,12 @@
+V:\Development\VTS-Sharp\VTS\bin\Debug\net472\VTS.dll
+V:\Development\VTS-Sharp\VTS\bin\Debug\net472\VTS.pdb
+V:\Development\VTS-Sharp\VTS\bin\Debug\net472\Newtonsoft.Json.dll
+V:\Development\VTS-Sharp\VTS\bin\Debug\net472\websocket-sharp.dll
+V:\Development\VTS-Sharp\VTS\obj\Debug\net472\VTS.csproj.AssemblyReference.cache
+V:\Development\VTS-Sharp\VTS\obj\Debug\net472\VTS.GeneratedMSBuildEditorConfig.editorconfig
+V:\Development\VTS-Sharp\VTS\obj\Debug\net472\VTS.AssemblyInfoInputs.cache
+V:\Development\VTS-Sharp\VTS\obj\Debug\net472\VTS.AssemblyInfo.cs
+V:\Development\VTS-Sharp\VTS\obj\Debug\net472\VTS.csproj.CoreCompileInputs.cache
+V:\Development\VTS-Sharp\VTS\obj\Debug\net472\VTS.csproj.CopyComplete
+V:\Development\VTS-Sharp\VTS\obj\Debug\net472\VTS.dll
+V:\Development\VTS-Sharp\VTS\obj\Debug\net472\VTS.pdb

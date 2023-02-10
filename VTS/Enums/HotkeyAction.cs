@@ -1,8 +1,10 @@
-﻿namespace VTS {
+﻿using System;
+
+namespace VTS {
     /// <summary>
     /// Enum for the actions that can be triggered by hotkeys.
     /// </summary>
-    [System.Serializable]
+    [Serializable]
     public enum HotkeyAction
     {
         Unset = -1,                       // Unset.

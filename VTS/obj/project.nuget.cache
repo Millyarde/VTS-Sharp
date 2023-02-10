@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "Qjyq/Pp7NwdnICm/PDKPW82iNKewmjaDSQj/WM24zi16mVvuHMTwynkURLaxhfjgjv2wQ3ltcxSho382d99L/w==",
+  "success": true,
+  "projectFilePath": "V:\\Development\\VTS-Sharp\\VTS\\VTS.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Vivi\\.nuget\\packages\\newtonsoft.json\\9.0.1\\newtonsoft.json.9.0.1.nupkg.sha512"
+  ],
+  "logs": []
+}

@@ -1,62 +1,78 @@
-﻿using System;
-using System.Text.RegularExpressions;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using System.Text.RegularExpressions;
 using VTS.Networking;
-using VTS.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using static VTS.VTSAuthTokenRequestData;
+using static VTS.VTSModelLoadRequestData;
+using static VTS.VTSMoveModelRequestData;
+using static VTS.VTSHotkeysInCurrentModelRequestData;
+using static VTS.VTSHotkeyTriggerRequestData;
+using static VTS.VTSColorTintRequestData;
+using static VTS.VTSParameterValueRequestData;
+using static VTS.VTSParameterCreationRequestData;
+using static VTS.VTSParameterDeletionRequestData;
+using static VTS.VTSInjectParameterDataRequestData;
+using static VTS.VTSExpressionActivationRequestData;
+using static VTS.VTSSetCurrentModelPhysicsRequestData;
+using static VTS.VTSItemListRequestData;
+using static VTS.VTSItemLoadRequestData;
+using static VTS.VTSItemUnloadRequestData;
+using static VTS.VTSItemAnimationControlRequestData;
+using static VTS.VTSItemMoveRequestData;
+using static VTS.VTSArtMeshSelectionRequestData;
+using static VTS.VTSEventSubscriptionRequestData;
 
-namespace VTS {
+namespace VTS
+{
     /// <summary>
     /// The base class for VTS plugin creation.
     /// </summary>
-    [RequireComponent(typeof(VTSWebSocket))]
-    public abstract class VTSPlugin : MonoBehaviour {
+    public class VTSPlugin
+    {
         #region Properties
 
-        [SerializeField]
         protected string _pluginName = "ExamplePlugin";
         /// <summary>
         /// The name of this plugin. Required for authorization purposes..
         /// </summary>
         /// <value></value>
-        public string PluginName { get { return this._pluginName; } }
-        [SerializeField]
+        public string PluginName { get { return _pluginName; } }
+
         protected string _pluginAuthor = "ExampleAuthor";
         /// <summary>
         /// The name of this plugin's author. Required for authorization purposes.
         /// </summary>
         /// <value></value>
-        public string PluginAuthor { get { return this._pluginAuthor; } }
-        [SerializeField]
-        protected Texture2D _pluginIcon = null;
+        public string PluginAuthor { get { return _pluginAuthor; } }
+
+        protected string _pluginIcon = null;
         /// <summary>
         /// The icon for this plugin.
+        /// Base 64 string PNG/JPG
         /// </summary>
         /// <value></value>
-        public Texture2D PluginIcon { get { return this._pluginIcon; } }
+        public string PluginIcon { get { return _pluginIcon; } }
 
-        private VTSWebSocket _socket = null;
         /// <summary>
         /// The underlying WebSocket for connecting to VTS.
         /// </summary>
         /// <value></value>
-        protected VTSWebSocket Socket { get { return this._socket; } }
+        protected VTSWebSocket Socket { get; private set; } = new VTSWebSocket();
 
         private string _token = null;
 
-        private ITokenStorage _tokenStorage = null;
         /// <summary>
         /// The underlying Token Storage mechanism for connecting to VTS.
         /// </summary>
         /// <value></value>
-        protected ITokenStorage TokenStorage { get { return this._tokenStorage; } }
+        protected ITokenStorage TokenStorage { get; private set; } = null;
 
-        private bool _isAuthenticated = false;
         /// <summary>
         /// Is the plugin currently authenticated?
         /// </summary>
         /// <value></value>
-        public bool IsAuthenticated { get { return this._isAuthenticated; } }
+        public bool IsAuthenticated { get; private set; } = false;
 
         #endregion
 
@@ -66,43 +82,45 @@ namespace VTS {
         /// Selects the Websocket, JSON utility, and Token Storage implementations, then attempts to Authenticate the plugin.
         /// </summary>
         /// <param name="webSocket">The websocket implementation.</param>
-        /// <param name="jsonUtility">The JSON serializer/deserializer implementation.</param>
         /// <param name="tokenStorage">The Token Storage implementation.</param>
         /// <param name="onConnect">Callback executed upon successful initialization.</param>
         /// <param name="onDisconnect">Callback executed upon disconnecting from VTS.</param>
         /// <param name="onError">The Callback executed upon failed initialization.</param>
-        public void Initialize(IWebSocket webSocket, IJsonUtility jsonUtility, ITokenStorage tokenStorage, Action onConnect, Action onDisconnect, Action onError){
-            this._tokenStorage = tokenStorage;
-            this._socket = GetComponent<VTSWebSocket>();
-            this._socket.Initialize(webSocket, jsonUtility);
-            Action onCombinedConnect = () => {
-                this._socket.ResubscribeToEvents();
+        public void Initialize(IWebSocket webSocket, ITokenStorage tokenStorage, Action onConnect, Action onDisconnect, Action onError)
+        {
+            TokenStorage = tokenStorage;
+            Socket.Initialize(webSocket);
+
+            void OnCombinedConnect()
+            {
+                Socket.ResubscribeToEvents();
                 onConnect();
-            };
-            this._socket.Connect(() => {
+            }
+
+            Socket.Connect(() =>
                 // If API enabled, authenticate
                 Authenticate(
-                    (r) => { 
-                        if(!r.data.authenticated){
-                            Reauthenticate(onCombinedConnect, onError);
-                        }else{
-                            this._isAuthenticated = true;
-                            onCombinedConnect();
+                    (r) =>
+                    {
+                        if (!r.Data.Authenticated)
+                        {
+                            Reauthenticate(OnCombinedConnect, onError);
                         }
-                    }, 
-                    (r) => { 
-                        // If initial authentication fails, try again
-                        // (Likely just needs fresh token)
-                        Reauthenticate(onCombinedConnect, onError); 
-                    }
-                );
-            },
-            () => {
-                this._isAuthenticated = false;
+                        else
+                        {
+                            IsAuthenticated = true;
+                            OnCombinedConnect();
+                        }
+                    },
+                    (r) => Reauthenticate(OnCombinedConnect, onError)),
+            () =>
+            {
+                IsAuthenticated = false;
                 onDisconnect();
             },
-            () => {
-                this._isAuthenticated = false;
+            () =>
+            {
+                IsAuthenticated = false;
                 onError();
             });
         }
@@ -110,69 +128,92 @@ namespace VTS {
         /// <summary>
         /// Disconnects from VTube Studio. Will fire the onDisconnect callback set via the Initialize method.
         /// </summary>
-        public void Disconnect(){
-            if(this._socket != null){
-                this._socket.Disconnect();
-            }
+        public void Disconnect()
+        {
+            Socket?.Disconnect();
         }
 
         #endregion
 
         #region Authentication
 
-        private void Authenticate(Action<VTSAuthData> onSuccess, Action<VTSErrorData> onError){
-            this._isAuthenticated = false;
-            if(this._tokenStorage != null){
-                this._token = this._tokenStorage.LoadToken();
-                if(String.IsNullOrEmpty(this._token)){
+        private void Authenticate(Action<VTSAuthTokenRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            IsAuthenticated = false;
+
+            if (TokenStorage != null)
+            {
+                _token = TokenStorage.LoadToken();
+
+                if (string.IsNullOrEmpty(_token))
+                {
                     GetToken(onSuccess, onError);
-                }else{
+                }
+                else
+                {
                     UseToken(onSuccess, onError);
                 }
-            }else{
+            }
+            else
+            {
                 GetToken(onSuccess, onError);
             }
         }
 
-        private void Reauthenticate(Action onConnect, Action onError){
-            Debug.LogWarning("Token expired, acquiring new token...");
-            this._isAuthenticated = false;
-            this._tokenStorage.DeleteToken();
-            Authenticate( 
-                (t) => { 
-                    this._isAuthenticated = true;
+        private void Reauthenticate(Action onConnect, Action onError)
+        {
+            IsAuthenticated = false;
+            TokenStorage.DeleteToken();
+
+            Authenticate(
+                (t) =>
+                {
+                    IsAuthenticated = true;
                     onConnect();
-                }, 
-                (t) => {
-                    this._isAuthenticated = false;
+                },
+                (t) =>
+                {
+                    IsAuthenticated = false;
                     onError();
                 }
             );
         }
 
-        private void GetToken(Action<VTSAuthData> onSuccess, Action<VTSErrorData> onError){
-            VTSAuthData tokenRequest = new VTSAuthData();
-            tokenRequest.data.pluginName = this._pluginName;
-            tokenRequest.data.pluginDeveloper = this._pluginAuthor;
-            tokenRequest.data.pluginIcon = EncodeIcon(this._pluginIcon);
-            this._socket.Send<VTSAuthData, VTSAuthData>(tokenRequest,
-            (a) => {
-                this._token = a.data.authenticationToken; 
-                if(this._tokenStorage != null){
-                    this._tokenStorage.SaveToken(this._token);
+        private void GetToken(Action<VTSAuthTokenRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSAuthTokenRequestData tokenRequest = new VTSAuthTokenRequestData()
+            {
+                Data = new AuthRequestData()
+                {
+                    PluginName = _pluginName,
+                    PluginDeveloper = _pluginAuthor,
+                    PluginIcon = _pluginIcon
                 }
+            };
+
+            Socket.Send<VTSAuthTokenRequestData, VTSAuthTokenRequestData>(tokenRequest,
+            (a) =>
+            {
+                _token = a.Data.AuthenticationToken;
+                TokenStorage?.SaveToken(_token);
                 UseToken(onSuccess, onError);
             },
             onError);
         }
 
-        private void UseToken(Action<VTSAuthData> onSuccess, Action<VTSErrorData> onError){
-            VTSAuthData authRequest = new VTSAuthData();
-            authRequest.messageType = "AuthenticationRequest";
-            authRequest.data.pluginName = this._pluginName;
-            authRequest.data.pluginDeveloper = this._pluginAuthor;
-            authRequest.data.authenticationToken = this._token;
-            this._socket.Send<VTSAuthData, VTSAuthData>(authRequest, onSuccess, onError);
+        private void UseToken(Action<VTSAuthTokenRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSAuthTokenRequestData authRequest = new VTSAuthTokenRequestData
+            {
+                Data = new AuthRequestData()
+                {
+                    PluginName = _pluginName,
+                    PluginDeveloper = _pluginAuthor,
+                    AuthenticationToken = _token
+                }
+            };
+
+            Socket.Send(authRequest, onSuccess, onError);
         }
 
         #endregion
@@ -186,8 +227,9 @@ namespace VTS {
         /// <a href="https://github.com/DenchiSoft/VTubeStudio#api-server-discovery-udp">https://github.com/DenchiSoft/VTubeStudio#api-server-discovery-udp</a>
         /// </summary>
         /// <returns>Dictionary indexed by port number.</returns>
-        public Dictionary<int, VTSStateBroadcastData> GetPorts(){
-            return this._socket.GetPorts();
+        public Dictionary<int, VTSVTubeStudioAPIStateBroadcastData> GetPorts()
+        {
+            return Socket.GetPorts();
         }
 
         /// <summary>
@@ -196,8 +238,9 @@ namespace VTS {
         /// </summary>
         /// <param name="port">The port to connect to.</param>
         /// <returns>True if the port is a valid VTube Studio port, False otherwise.</returns>
-        public bool SetPort(int port){
-            return this._socket.SetPort(port);
+        public bool SetPort(int port)
+        {
+            return Socket.SetPort(port);
         }
 
         /// <summary>
@@ -206,8 +249,9 @@ namespace VTS {
         /// </summary>
         /// <param name="ipString">The string form of the IP address, in dotted-quad notation for IPv4.</param>
         /// <returns>True if the string is a valid IP Address format, False otherwise.</returns>
-        public bool SetIPAddress(string ipString){
-            return this._socket.SetIPAddress(ipString);
+        public bool SetIPAddress(string ipString)
+        {
+            return Socket.SetIPAddress(ipString);
         }
 
         #endregion
@@ -222,9 +266,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetAPIState(Action<VTSStateData> onSuccess, Action<VTSErrorData> onError){
-            VTSStateData request = new VTSStateData();
-            this._socket.Send<VTSStateData, VTSStateData>(request, onSuccess, onError);
+        public void GetAPIState(Action<VTSStateRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSStateRequestData request = new VTSStateRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -235,9 +280,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetStatistics(Action<VTSStatisticsData> onSuccess, Action<VTSErrorData> onError){
-            VTSStatisticsData request = new VTSStatisticsData();
-            this._socket.Send<VTSStatisticsData, VTSStatisticsData>(request, onSuccess, onError);
+        public void GetStatistics(Action<VTSStatisticsRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSStatisticsRequestData request = new VTSStatisticsRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -248,9 +294,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetFolderInfo(Action<VTSFolderInfoData> onSuccess, Action<VTSErrorData> onError){
-            VTSFolderInfoData request = new VTSFolderInfoData();
-            this._socket.Send<VTSFolderInfoData, VTSFolderInfoData>(request, onSuccess, onError);
+        public void GetFolderInfo(Action<VTSFolderInfoRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSFolderInfoRequestData request = new VTSFolderInfoRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -261,9 +308,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetCurrentModel(Action<VTSCurrentModelData> onSuccess, Action<VTSErrorData> onError){
-            VTSCurrentModelData request = new VTSCurrentModelData();
-            this._socket.Send<VTSCurrentModelData, VTSCurrentModelData>(request, onSuccess, onError);
+        public void GetCurrentModel(Action<VTSCurrentModelRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSCurrentModelRequestData request = new VTSCurrentModelRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -274,11 +322,12 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetAvailableModels(Action<VTSAvailableModelsData> onSuccess, Action<VTSErrorData> onError){
-            VTSAvailableModelsData request = new VTSAvailableModelsData();
-            this._socket.Send<VTSAvailableModelsData, VTSAvailableModelsData>(request, onSuccess, onError);
+        public void GetAvailableModels(Action<VTSAvailableModelsRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSAvailableModelsRequestData request = new VTSAvailableModelsRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
-        
+
         /// <summary>
         /// Loads a VTS model by its Model ID. Will return an error if the model cannot be loaded.
         /// 
@@ -288,10 +337,17 @@ namespace VTS {
         /// <param name="modelID">The Model ID/Name.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void LoadModel(string modelID, Action<VTSModelLoadData> onSuccess, Action<VTSErrorData> onError){
-            VTSModelLoadData request = new VTSModelLoadData();
-            request.data.modelID = modelID;
-            this._socket.Send<VTSModelLoadData, VTSModelLoadData>(request, onSuccess, onError);
+        public void LoadModel(string modelID, Action<VTSModelLoadRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSModelLoadRequestData request = new VTSModelLoadRequestData()
+            {
+                Data = new ModelLoadRequestData()
+                {
+                    ModelID = modelID
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -303,10 +359,14 @@ namespace VTS {
         /// <param name="position">The desired position information. Fields will be null-valued by default.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void MoveModel(VTSMoveModelData.Data position, Action<VTSMoveModelData> onSuccess, Action<VTSErrorData> onError){
-            VTSMoveModelData request = new VTSMoveModelData();
-            request.data = position;
-            this._socket.Send<VTSMoveModelData, VTSMoveModelData>(request, onSuccess, onError);
+        public void MoveModel(MoveModelRequestData position, Action<VTSMoveModelRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSMoveModelRequestData request = new VTSMoveModelRequestData
+            {
+                Data = position
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -318,12 +378,19 @@ namespace VTS {
         /// <param name="modelID">Optional, the model ID to get hotkeys for.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetHotkeysInCurrentModel(string modelID, Action<VTSHotkeysInCurrentModelData> onSuccess, Action<VTSErrorData> onError){
-            VTSHotkeysInCurrentModelData request = new VTSHotkeysInCurrentModelData();
-            request.data.modelID = modelID;
-            this._socket.Send<VTSHotkeysInCurrentModelData, VTSHotkeysInCurrentModelData>(request, onSuccess, onError);
+        public void GetHotkeysInCurrentModel(string modelID, Action<VTSHotkeysInCurrentModelRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSHotkeysInCurrentModelRequestData request = new VTSHotkeysInCurrentModelRequestData()
+            {
+                Data = new HotkeysInCurrentModelRequestData()
+                {
+                    ModelID= modelID
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
-        
+
         /// <summary>
         /// Gets a list of available hotkeys for the specified Live2D Item.
         /// 
@@ -333,10 +400,17 @@ namespace VTS {
         /// <param name="live2DItemFileName">Optional, the Live 2D item to get hotkeys for.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetHotkeysInLive2DItem(string live2DItemFileName, Action<VTSHotkeysInCurrentModelData> onSuccess, Action<VTSErrorData> onError){
-            VTSHotkeysInCurrentModelData request = new VTSHotkeysInCurrentModelData();
-            request.data.live2DItemFileName = live2DItemFileName;
-            this._socket.Send<VTSHotkeysInCurrentModelData, VTSHotkeysInCurrentModelData>(request, onSuccess, onError);
+        public void GetHotkeysInLive2DItem(string live2DItemFileName, Action<VTSHotkeysInCurrentModelRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSHotkeysInCurrentModelRequestData request = new VTSHotkeysInCurrentModelRequestData()
+            {
+                Data = new HotkeysInCurrentModelRequestData()
+                {
+                    Live2DItemFileName = live2DItemFileName
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -348,10 +422,17 @@ namespace VTS {
         /// <param name="hotkeyID">The model ID to get hotkeys for.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void TriggerHotkey(string hotkeyID, Action<VTSHotkeyTriggerData> onSuccess, Action<VTSErrorData> onError){
-            VTSHotkeyTriggerData request = new VTSHotkeyTriggerData();
-            request.data.hotkeyID = hotkeyID;
-            this._socket.Send<VTSHotkeyTriggerData, VTSHotkeyTriggerData>(request, onSuccess, onError);
+        public void TriggerHotkey(string hotkeyID, Action<VTSHotkeyTriggerRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSHotkeyTriggerRequestData request = new VTSHotkeyTriggerRequestData()
+            {
+                Data = new HotkeyTriggerRequestData()
+                {
+                    HotkeyID = hotkeyID
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -364,11 +445,18 @@ namespace VTS {
         /// <param name="hotkeyID">The model ID to get hotkeys for.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void TriggerHotkeyForLive2DItem(string itemInstanceID, string hotkeyID, Action<VTSHotkeyTriggerData> onSuccess, Action<VTSErrorData> onError){
-            VTSHotkeyTriggerData request = new VTSHotkeyTriggerData();
-            request.data.hotkeyID = hotkeyID;
-            request.data.itemInstanceID = itemInstanceID;
-            this._socket.Send<VTSHotkeyTriggerData, VTSHotkeyTriggerData>(request, onSuccess, onError);
+        public void TriggerHotkeyForLive2DItem(string itemInstanceID, string hotkeyID, Action<VTSHotkeyTriggerRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSHotkeyTriggerRequestData request = new VTSHotkeyTriggerRequestData()
+            {
+                Data = new HotkeyTriggerRequestData()
+                {
+                    HotkeyID = hotkeyID,
+                    ItemInstanceID = itemInstanceID
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -379,9 +467,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetArtMeshList(Action<VTSArtMeshListData> onSuccess, Action<VTSErrorData> onError){
-            VTSArtMeshListData request = new VTSArtMeshListData();
-            this._socket.Send<VTSArtMeshListData, VTSArtMeshListData>(request, onSuccess, onError);
+        public void GetArtMeshList(Action<VTSArtMeshListRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSArtMeshListRequestData request = new VTSArtMeshListRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -395,14 +484,21 @@ namespace VTS {
         /// <param name="matcher">The ArtMesh matcher search parameters.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void TintArtMesh(Color32 tint, float mixWithSceneLightingColor,  ArtMeshMatcher matcher, Action<VTSColorTintData> onSuccess, Action<VTSErrorData> onError){
-            VTSColorTintData request = new VTSColorTintData();
-            ArtMeshColorTint colorTint = new ArtMeshColorTint();
-            colorTint.FromColor32(tint);
-            colorTint.mixWithSceneLightingColor = System.Math.Min(1, System.Math.Max(mixWithSceneLightingColor, 0));
-            request.data.colorTint = colorTint;
-            request.data.artMeshMatcher = matcher;
-            this._socket.Send<VTSColorTintData, VTSColorTintData>(request, onSuccess, onError);
+        public void TintArtMesh(ColorTint tint, float mixWithSceneLightingColor, ArtMeshMatcher matcher, Action<VTSColorTintRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSColorTintRequestData request = new VTSColorTintRequestData()
+            {
+                Data = new ColorTintRequestData()
+                {
+                    ArtMeshMatcher = matcher,
+                    ColorTint = new ArtMeshColorTint(tint)
+                    {
+                        MixWithSceneLightingColor = Math.Min(1, Math.Max(mixWithSceneLightingColor, 0))
+                    },
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -413,9 +509,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess"></param>
         /// <param name="onError"></param>
-        public void GetSceneColorOverlayInfo(Action<VTSSceneColorOverlayData> onSuccess, Action<VTSErrorData> onError){
-            VTSSceneColorOverlayData request = new VTSSceneColorOverlayData();
-            this._socket.Send<VTSSceneColorOverlayData, VTSSceneColorOverlayData>(request, onSuccess, onError);
+        public void GetSceneColorOverlayInfo(Action<VTSSceneColorOverlayInfoRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSSceneColorOverlayInfoRequestData request = new VTSSceneColorOverlayInfoRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -426,9 +523,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetFaceFound(Action<VTSFaceFoundData> onSuccess, Action<VTSErrorData> onError){
-            VTSFaceFoundData request = new VTSFaceFoundData();
-            this._socket.Send<VTSFaceFoundData, VTSFaceFoundData>(request, onSuccess, onError);
+        public void GetFaceFound(Action<VTSFaceFoundRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSFaceFoundRequestData request = new VTSFaceFoundRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -439,9 +537,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetInputParameterList(Action<VTSInputParameterListData> onSuccess, Action<VTSErrorData> onError){
-            VTSInputParameterListData request = new VTSInputParameterListData();
-            this._socket.Send<VTSInputParameterListData, VTSInputParameterListData>(request, onSuccess, onError);
+        public void GetInputParameterList(Action<VTSInputParameterListRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSInputParameterListRequestData request = new VTSInputParameterListRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -453,10 +552,17 @@ namespace VTS {
         /// <param name="parameterName">The name of the parameter to get the value of.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetParameterValue(string parameterName, Action<VTSParameterValueData> onSuccess, Action<VTSErrorData> onError){
-            VTSParameterValueData request = new VTSParameterValueData();
-            request.data.name = parameterName;
-            this._socket.Send<VTSParameterValueData, VTSParameterValueData>(request, onSuccess, onError);
+        public void GetParameterValue(string parameterName, Action<VTSParameterValueRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSParameterValueRequestData request = new VTSParameterValueRequestData()
+            {
+                Data = new ParameterValueRequestData()
+                {
+                    Name = parameterName
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -467,9 +573,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetLive2DParameterList(Action<VTSLive2DParameterListData> onSuccess, Action<VTSErrorData> onError){
-            VTSLive2DParameterListData request = new VTSLive2DParameterListData();
-            this._socket.Send<VTSLive2DParameterListData, VTSLive2DParameterListData>(request, onSuccess, onError);
+        public void GetLive2DParameterList(Action<VTSLive2DParameterListRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSLive2DParameterListRequestData request = new VTSLive2DParameterListRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -481,14 +588,21 @@ namespace VTS {
         /// <param name="parameter">Information about the parameter to add. Parameter name must be 4-32 characters, alphanumeric.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void AddCustomParameter(VTSCustomParameter parameter, Action<VTSParameterCreationData> onSuccess, Action<VTSErrorData> onError){
-            VTSParameterCreationData request = new VTSParameterCreationData();
-            request.data.parameterName = SanitizeParameterName(parameter.parameterName);
-            request.data.explanation = parameter.explanation;
-            request.data.min = parameter.min;
-            request.data.max = parameter.max;
-            request.data.defaultValue = parameter.defaultValue;
-            this._socket.Send<VTSParameterCreationData, VTSParameterCreationData>(request, onSuccess, onError);
+        public void AddCustomParameter(VTSCustomParameter parameter, Action<VTSParameterCreationRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSParameterCreationRequestData request = new VTSParameterCreationRequestData()
+            {
+                Data = new ParameterCreationRequestData()
+                {
+                    ParameterName = SanitizeParameterName(parameter.ParameterName),
+                    Explanation = parameter.Explanation,
+                    Min = parameter.Min,
+                    Max = parameter.Max,
+                    DefaultValue = parameter.DefaultValue
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -500,10 +614,17 @@ namespace VTS {
         /// <param name="parameterName">The name f the parameter to remove.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void RemoveCustomParameter(string parameterName, Action<VTSParameterDeletionData> onSuccess, Action<VTSErrorData> onError){
-            VTSParameterDeletionData request = new VTSParameterDeletionData();
-            request.data.parameterName = SanitizeParameterName(parameterName);
-            this._socket.Send<VTSParameterDeletionData, VTSParameterDeletionData>(request, onSuccess, onError);
+        public void RemoveCustomParameter(string parameterName, Action<VTSParameterDeletionRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSParameterDeletionRequestData request = new VTSParameterDeletionRequestData()
+            {
+                Data = new ParameterDeletionRequestData()
+                {
+                    ParameterName = SanitizeParameterName(parameterName)
+                }
+            };
+           
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -515,7 +636,8 @@ namespace VTS {
         /// <param name="values">A list of parameters and the values to assign to them.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void InjectParameterValues(VTSParameterInjectionValue[] values, Action<VTSInjectParameterData> onSuccess, Action<VTSErrorData> onError){
+        public void InjectParameterValues(VTSParameterInjectionValue[] values, Action<VTSInjectParameterDataRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
             InjectParameterValues(values, VTSInjectParameterMode.SET, false, onSuccess, onError);
         }
 
@@ -529,7 +651,8 @@ namespace VTS {
         /// <param name="mode">The method by which the parameter values are applied.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void InjectParameterValues(VTSParameterInjectionValue[] values, VTSInjectParameterMode mode, Action<VTSInjectParameterData> onSuccess, Action<VTSErrorData> onError){
+        public void InjectParameterValues(VTSParameterInjectionValue[] values, VTSInjectParameterMode mode, Action<VTSInjectParameterDataRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
             InjectParameterValues(values, mode, false, onSuccess, onError);
         }
 
@@ -544,15 +667,25 @@ namespace VTS {
         /// <param name="faceFound">A flag which can be set to True to tell VTube Studio to consider the user face as found.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void InjectParameterValues(VTSParameterInjectionValue[] values, VTSInjectParameterMode mode, bool faceFound, Action<VTSInjectParameterData> onSuccess, Action<VTSErrorData> onError){
-            VTSInjectParameterData request = new VTSInjectParameterData();
-            foreach(VTSParameterInjectionValue value in values){
-                value.id = SanitizeParameterName(value.id);
+        public void InjectParameterValues(VTSParameterInjectionValue[] values, VTSInjectParameterMode mode, bool faceFound, Action<VTSInjectParameterDataRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            foreach (VTSParameterInjectionValue value in values)
+            {
+                value.Id = SanitizeParameterName(value.Id);
             }
-            request.data.faceFound = faceFound;
-            request.data.parameterValues = values;
-            request.data.mode = InjectParameterModeToString(mode);
-            this._socket.Send<VTSInjectParameterData, VTSInjectParameterData>(request, onSuccess, onError);
+
+            var request = new VTSInjectParameterDataRequestData()
+            {
+                Data = new InjectParameterDataRequestData()
+                {
+
+                    FaceFound = faceFound,
+                    ParameterValues = values,
+                    Mode = InjectParameterModeToString(mode)
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -563,10 +696,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetExpressionStateList(Action<VTSExpressionStateData> onSuccess, Action<VTSErrorData> onError){
-            VTSExpressionStateData request = new VTSExpressionStateData();
-            request.data.details = true;
-            this._socket.Send<VTSExpressionStateData, VTSExpressionStateData>(request, onSuccess, onError);
+        public void GetExpressionStateList(Action<VTSExpressionStateRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSExpressionStateRequestData request = new VTSExpressionStateRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -579,11 +712,18 @@ namespace VTS {
         /// <param name="active">The state to set the expression to. True to activate, false to deactivate.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void SetExpressionState(string expression, bool active, Action<VTSExpressionActivationData> onSuccess, Action<VTSErrorData> onError){
-            VTSExpressionActivationData request = new VTSExpressionActivationData();
-            request.data.expressionFile = expression;
-            request.data.active = active;
-            this._socket.Send<VTSExpressionActivationData, VTSExpressionActivationData>(request, onSuccess, onError);
+        public void SetExpressionState(string expression, bool active, Action<VTSExpressionActivationRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSExpressionActivationRequestData request = new VTSExpressionActivationRequestData()
+            {
+                Data = new ExpressionActivationRequestData()
+                {
+                    ExpressionFile = expression,
+                    Active = active
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -594,9 +734,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetCurrentModelPhysics(Action<VTSCurrentModelPhysicsData> onSuccess, Action<VTSErrorData> onError){
-            VTSCurrentModelPhysicsData request = new VTSCurrentModelPhysicsData();
-            this._socket.Send<VTSCurrentModelPhysicsData, VTSCurrentModelPhysicsData>(request, onSuccess, onError);
+        public void GetCurrentModelPhysics(Action<VTSGetCurrentModelPhysicsRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSGetCurrentModelPhysicsRequestData request = new VTSGetCurrentModelPhysicsRequestData();
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -609,11 +750,18 @@ namespace VTS {
         /// <param name="windOverrides">A list of wind override settings.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void SetCurrentModelPhysics(VTSPhysicsOverride[] strengthOverrides, VTSPhysicsOverride[] windOverrides, Action<VTSOverrideModelPhysicsData> onSuccess, Action<VTSErrorData> onError){
-            VTSOverrideModelPhysicsData request = new VTSOverrideModelPhysicsData();
-            request.data.strengthOverrides = strengthOverrides;
-            request.data.windOverrides = windOverrides;
-            this._socket.Send<VTSOverrideModelPhysicsData, VTSOverrideModelPhysicsData>(request, onSuccess, onError);
+        public void SetCurrentModelPhysics(VTSPhysicsOverride[] strengthOverrides, VTSPhysicsOverride[] windOverrides, Action<VTSSetCurrentModelPhysicsRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSSetCurrentModelPhysicsRequestData request = new VTSSetCurrentModelPhysicsRequestData()
+            {
+                Data = new SetCurrentModelPhysicsRequestData
+                {
+                    StrengthOverrides = strengthOverrides,
+                    WindOverrides = windOverrides
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -625,8 +773,9 @@ namespace VTS {
         /// <parame name="config">The desired NDI configuration.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void SetNDIConfig(VTSNDIConfigData config, Action<VTSNDIConfigData> onSuccess, Action<VTSErrorData> onError){
-            this._socket.Send<VTSNDIConfigData, VTSNDIConfigData>(config, onSuccess, onError);
+        public void SetNDIConfig(VTSNDIConfigRequestData config, Action<VTSNDIConfigRequestData> onSuccess, Action<VTSErrorData> onError)
+        {
+            Socket.Send(config, onSuccess, onError);
         }
 
         /// <summary>
@@ -638,14 +787,21 @@ namespace VTS {
         /// <param name="options">Configuration options about the request.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void GetItemList(VTSItemListOptions options, Action<VTSItemListResponseData> onSuccess, Action<VTSErrorData> onError){
-            VTSItemListRequestData request = new VTSItemListRequestData();
-            request.data.includeAvailableSpots = options.includeAvailableSpots;
-            request.data.includeItemInstancesInScene = options.includeItemInstancesInScene;
-            request.data.includeAvailableItemFiles = options.includeAvailableItemFiles;
-            request.data.onlyItemsWithFileName = options.onlyItemsWithFileName;
-            request.data.onlyItemsWithInstanceID = options.onlyItemsWithInstanceID;
-            this._socket.Send<VTSItemListRequestData, VTSItemListResponseData>(request, onSuccess, onError);
+        public void GetItemList(VTSItemListOptions options, Action<VTSItemListResponseData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSItemListRequestData request = new VTSItemListRequestData()
+            {
+                Data = new ItemListRequestData
+                {
+                    IncludeAvailableSpots = options.IncludeAvailableSpots,
+                    IncludeItemInstancesInScene = options.IncludeItemInstancesInScene,
+                    IncludeAvailableItemFiles = options.IncludeAvailableItemFiles,
+                    OnlyItemsWithFileName = options.OnlyItemsWithFileName,
+                    OnlyItemsWithInstanceID = options.OnlyItemsWithInstanceID
+                }
+            };
+           
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -658,22 +814,29 @@ namespace VTS {
         /// <param name="options">Configuration options about the request.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void LoadItem(string fileName, VTSItemLoadOptions options, Action<VTSItemLoadResponseData> onSuccess, Action<VTSErrorData> onError){
-            VTSItemLoadRequestData request = new VTSItemLoadRequestData();
-            request.data.fileName = fileName;
-            request.data.positionX = options.positionX;
-            request.data.positionY = options.positionY;
-            request.data.size = options.size;
-            request.data.rotation = options.rotation;
-            request.data.fadeTime = options.fadeTime;
-            request.data.order = options.order;
-            request.data.failIfOrderTaken = options.failIfOrderTaken;
-            request.data.smoothing = options.smoothing;
-            request.data.censored = options.censored;
-            request.data.flipped = options.flipped;
-            request.data.locked = options.locked;
-            request.data.unloadWhenPluginDisconnects = options.unloadWhenPluginDisconnects;
-            this._socket.Send<VTSItemLoadRequestData, VTSItemLoadResponseData>(request, onSuccess, onError);
+        public void LoadItem(string fileName, VTSItemLoadOptions options, Action<VTSItemLoadResponseData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSItemLoadRequestData request = new VTSItemLoadRequestData()
+            {
+                Data = new ItemLoadRequestData
+                {
+                    FileName = fileName,
+                    PositionX = options.PositionX,
+                    PositionY = options.PositionY,
+                    Size = options.Size,
+                    Rotation = options.Rotation,
+                    FadeTime = options.FadeTime,
+                    Order = options.Order,
+                    FailIfOrderTaken = options.FailIfOrderTaken,
+                    Smoothing = options.Smoothing,
+                    Censored = options.Censored,
+                    Flipped = options.Flipped,
+                    Locked = options.Locked,
+                    UnloadWhenPluginDisconnects = options.UnloadWhenPluginDisconnects
+                }
+            };
+            
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -685,14 +848,21 @@ namespace VTS {
         /// <param name="options">Configuration options about the request.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void UnloadItem(VTSItemUnloadOptions options, Action<VTSItemUnloadResponseData> onSuccess, Action<VTSErrorData> onError){
-            VTSItemUnloadRequestData request = new VTSItemUnloadRequestData();
-            request.data.instanceIDs = options.itemInstanceIDs;
-            request.data.fileNames = options.fileNames;
-            request.data.unloadAllInScene = options.unloadAllInScene;
-            request.data.unloadAllLoadedByThisPlugin = options.unloadAllLoadedByThisPlugin;
-            request.data.allowUnloadingItemsLoadedByUserOrOtherPlugins = options.allowUnloadingItemsLoadedByUserOrOtherPlugins;
-            this._socket.Send<VTSItemUnloadRequestData, VTSItemUnloadResponseData>(request, onSuccess, onError);
+        public void UnloadItem(VTSItemUnloadOptions options, Action<VTSItemUnloadResponseData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSItemUnloadRequestData request = new VTSItemUnloadRequestData()
+            {
+                Data = new ItemUnloadRequestData
+                {
+                    InstanceIDs = options.ItemInstanceIDs,
+                    FileNames = options.FileNames,
+                    UnloadAllInScene = options.UnloadAllInScene,
+                    UnloadAllLoadedByThisPlugin = options.UnloadAllLoadedByThisPlugin,
+                    AllowUnloadingItemsLoadedByUserOrOtherPlugins = options.AllowUnloadingItemsLoadedByUserOrOtherPlugins
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -704,18 +874,25 @@ namespace VTS {
         /// <param name="options">Configuration options about the request.</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void AnimateItem(string itemInstanceID, VTSItemAnimationControlOptions options, Action<VTSItemAnimationControlResponseData> onSuccess, Action<VTSErrorData> onError){
-            VTSItemAnimationControlRequestData request = new VTSItemAnimationControlRequestData();
-            request.data.itemInstanceID = itemInstanceID;
-            request.data.framerate = options.framerate;
-            request.data.frame = options.frame;
-            request.data.brightness = options.brightness;
-            request.data.opacity = options.opacity;
-            request.data.setAutoStopFrames = options.setAutoStopFrames;
-            request.data.autoStopFrames = options.autoStopFrames;
-            request.data.setAnimationPlayState = options.setAnimationPlayState;
-            request.data.animationPlayState = options.animationPlayState;
-            this._socket.Send<VTSItemAnimationControlRequestData, VTSItemAnimationControlResponseData>(request, onSuccess, onError);
+        public void AnimateItem(string itemInstanceID, VTSItemAnimationControlOptions options, Action<VTSItemAnimationControlResponseData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSItemAnimationControlRequestData request = new VTSItemAnimationControlRequestData()
+            {
+                Data = new ItemAnimationControlRequestData()
+                {
+                    ItemInstanceID = itemInstanceID,
+                    Framerate = options.Framerate,
+                    Frame = options.Frame,
+                    Brightness = options.Brightness,
+                    Opacity = options.Opacity,
+                    SetAutoStopFrames = options.SetAutoStopFrames,
+                    AutoStopFrames = options.AutoStopFrames,
+                    SetAnimationPlayState = options.SetAnimationPlayState,
+                    AnimationPlayState = options.AnimationPlayState
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
         /// <summary>
@@ -727,54 +904,66 @@ namespace VTS {
         /// <param name="items">The list of Item Insance IDs and their corresponding movement options</param>
         /// <param name="onSuccess">Callback executed upon receiving a response.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void MoveItem(VTSItemMoveEntry[] items, Action<VTSItemMoveResponseData> onSuccess, Action<VTSErrorData> onError){
-            VTSItemMoveRequestData request = new VTSItemMoveRequestData();
-            request.data.itemsToMove = new VTSItemToMove[items.Length];
-            for(int i = 0; i < items.Length; i++){
-                VTSItemMoveEntry entry = items[i];
-                request.data.itemsToMove[i] = new VTSItemToMove(
-                    entry.itemInsanceID,
-                    entry.options.timeInSeconds,
-                    MotionCurveToString(entry.options.fadeMode),
-                    entry.options.positionX,
-                    entry.options.positionY,
-                    entry.options.size,
-                    entry.options.rotation,
-                    entry.options.order,
-                    entry.options.setFlip,
-                    entry.options.flip,
-                    entry.options.userCanStop
-                );
-            }
-            this._socket.Send<VTSItemMoveRequestData, VTSItemMoveResponseData>(request, onSuccess, onError);
+        public void MoveItem(VTSItemMoveEntry[] items, Action<VTSItemMoveResponseData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSItemMoveRequestData request = new VTSItemMoveRequestData()
+            {
+                Data = new ItemMoveRequestData()
+                {
+                    ItemsToMove = items.Select(entry => new VTSItemToMove(
+                            entry.ItemInsanceID,
+                            entry.Options.TimeInSeconds,
+                            MotionCurveToString(entry.Options.FadeMode),
+                            entry.Options.PositionX,
+                            entry.Options.PositionY,
+                            entry.Options.Size,
+                            entry.Options.Rotation,
+                            entry.Options.Order,
+                            entry.Options.SetFlip,
+                            entry.Options.Flip,
+                            entry.Options.UserCanStop)).ToArray()
+                }
+            };
+
+            Socket.Send(request, onSuccess, onError);
         }
 
-        public void RequestArtMeshSelection(string textOverride, string helpOverride, int count, 
-            ICollection<string> activeArtMeshes, 
-            Action<VTSArtMeshSelectionResponseData> onSuccess, Action<VTSErrorData> onError){
-            VTSArtMeshSelectionRequestData request = new VTSArtMeshSelectionRequestData();
-            request.data.textOverride = textOverride;
-            request.data.helpOverride = helpOverride;
-            request.data.requestedArtMeshCount = count;
-            string[] array = new string[activeArtMeshes.Count];
-            activeArtMeshes.CopyTo(array, 0);
-            request.data.activeArtMeshes = array;
+        public void RequestArtMeshSelection(string textOverride, string helpOverride, int count,
+            ICollection<string> activeArtMeshes,
+            Action<VTSArtMeshSelectionResponseData> onSuccess, Action<VTSErrorData> onError)
+        {
+            VTSArtMeshSelectionRequestData request = new VTSArtMeshSelectionRequestData()
+            {
+                Data = new ArtMeshSelectionRequestData()
+                {
+                    TextOverride = textOverride,
+                    HelpOverride = helpOverride,
+                    RequestedArtMeshCount = count,
+                    ActiveArtMeshes = activeArtMeshes.ToArray()
+                }
+            };
 
-            this._socket.Send<VTSArtMeshSelectionRequestData, VTSArtMeshSelectionResponseData>(request, onSuccess, onError);
+            Socket.Send(request, onSuccess, onError);
         }
 
         #endregion
 
         #region VTS Event Subscription API Wrapper
 
-        private void SubscribeToEvent<T, K>(string eventName, bool subscribed, VTSEventConfigData config, Action<K> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError) where T : VTSEventSubscriptionRequestData, new() where K : VTSEventData {
-            T request = new T();
-            request.SetEventName(eventName);
-            request.SetSubscribed(subscribed);
-            if(config != null){
-                request.SetConfig(config);
-            }
-            this._socket.SendEventSubscription<T, K>(request, onEvent, onSubscribe, onError, () => {
+        private void SubscribeToEvent<T, K>(string eventName, bool subscribed, VTSEventConfigData config, Action<K> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError) where T : VTSEventSubscriptionRequestData, new() where K : VTSEventData
+        {
+            var request = new VTSEventSubscriptionRequestData()
+            {
+                Data = new VTSEventSubscriptonRequestData()
+                {
+                    EventName = eventName,
+                    Subscribe = subscribed,
+                    Config= config
+                }
+            };
+
+            Socket.SendEventSubscription(request, onEvent, onSubscribe, onError, () =>
+            {
                 SubscribeToEvent<T, K>(eventName, subscribed, config, onEvent, onSubscribe, onError);
             });
         }
@@ -784,7 +973,8 @@ namespace VTS {
         /// </summary>
         /// <param name="onUnsubscribe">Callback executed upon successfully unsubscribing to the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void UnsubscribeFromAllEvents(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError){
+        public void UnsubscribeFromAllEvents(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSTestEventSubscriptionRequestData, VTSTestEventData>(null, false, null, DoNothingCallback, onUnsubscribe, onError);
         }
 
@@ -798,7 +988,8 @@ namespace VTS {
         /// <param name="onEvent">Callback to execute upon receiving an event.</param>
         /// <param name="onSubscribe">Callback executed upon successfully subscribing to the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void SubscribeToTestEvent(VTSTestEventConfigOptions config, Action<VTSTestEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError){
+        public void SubscribeToTestEvent(VTSTestEventConfigOptions config, Action<VTSTestEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSTestEventSubscriptionRequestData, VTSTestEventData>("TestEvent", true, config, onEvent, onSubscribe, onError);
         }
 
@@ -807,7 +998,8 @@ namespace VTS {
         /// </summary>
         /// <param name="onUnsubscribe">Callback executed upon successfully unsubscribing from the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void UnsubscribeFromTestEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError){
+        public void UnsubscribeFromTestEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSTestEventSubscriptionRequestData, VTSTestEventData>("TestEvent", false, null, DoNothingCallback, onUnsubscribe, onError);
         }
 
@@ -821,7 +1013,8 @@ namespace VTS {
         /// <param name="onEvent">Callback to execute upon receiving an event.</param>
         /// <param name="onSubscribe">Callback executed upon successfully subscribing to the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void SubscribeToModelLoadedEvent(VTSModelLoadedEventConfigOptions config, Action<VTSModelLoadedEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError){
+        public void SubscribeToModelLoadedEvent(VTSModelLoadedEventConfigOptions config, Action<VTSModelLoadedEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSModelLoadedEventSubscriptionRequestData, VTSModelLoadedEventData>("ModelLoadedEvent", true, config, onEvent, onSubscribe, onError);
         }
 
@@ -830,7 +1023,8 @@ namespace VTS {
         /// </summary>
         /// <param name="onUnsubscribe">Callback executed upon successfully unsubscribing from the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void UnsubscribeFromModelLoadedEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError){
+        public void UnsubscribeFromModelLoadedEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSModelLoadedEventSubscriptionRequestData, VTSTestEventData>("ModelLoadedEvent", false, null, DoNothingCallback, onUnsubscribe, onError);
         }
 
@@ -843,7 +1037,8 @@ namespace VTS {
         /// <param name="onEvent">Callback to execute upon receiving an event.</param>
         /// <param name="onSubscribe">Callback executed upon successfully subscribing to the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void SubscribeToTrackingEvent(Action<VTSTrackingEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError){
+        public void SubscribeToTrackingEvent(Action<VTSTrackingEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSTrackingEventSubscriptionRequestData, VTSTrackingEventData>("TrackingStatusChangedEvent", true, new VTSTrackingEventConfigOptions(), onEvent, onSubscribe, onError);
         }
 
@@ -852,7 +1047,8 @@ namespace VTS {
         /// </summary>
         /// <param name="onUnsubscribe">Callback executed upon successfully unsubscribing from the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void UnsubscribeFromTrackingEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError){
+        public void UnsubscribeFromTrackingEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSTrackingEventSubscriptionRequestData, VTSTrackingEventData>("TrackingStatusChangedEvent", false, null, DoNothingCallback, onUnsubscribe, onError);
         }
 
@@ -865,7 +1061,8 @@ namespace VTS {
         /// <param name="onEvent">Callback to execute upon receiving an event.</param>
         /// <param name="onSubscribe">Callback executed upon successfully subscribing to the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void SubscribeToBackgroundChangedEvent(Action<VTSBackgroundChangedEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError){
+        public void SubscribeToBackgroundChangedEvent(Action<VTSBackgroundChangedEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSBackgroundChangedEventSubscriptionRequestData, VTSBackgroundChangedEventData>("BackgroundChangedEvent", true, new VTSBackgroundChangedEventConfigOptions(), onEvent, onSubscribe, onError);
         }
 
@@ -874,7 +1071,8 @@ namespace VTS {
         /// </summary>
         /// <param name="onUnsubscribe">Callback executed upon successfully unsubscribing from the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void UnsubscribeFromBackgroundChangedEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError){
+        public void UnsubscribeFromBackgroundChangedEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSBackgroundChangedEventSubscriptionRequestData, VTSBackgroundChangedEventData>("BackgroundChangedEvent", false, null, DoNothingCallback, onUnsubscribe, onError);
         }
 
@@ -887,7 +1085,8 @@ namespace VTS {
         /// <param name="onEvent">Callback to execute upon receiving an event.</param>
         /// <param name="onSubscribe">Callback executed upon successfully subscribing to the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void SubscribeToModelConfigChangedEvent(Action<VTSModelConfigChangedEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError){
+        public void SubscribeToModelConfigChangedEvent(Action<VTSModelConfigChangedEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSModelConfigChangedEventSubscriptionRequestData, VTSModelConfigChangedEventData>("ModelConfigChangedEvent", true, new VTSModelConfigChangedEventConfigOptions(), onEvent, onSubscribe, onError);
         }
 
@@ -896,7 +1095,8 @@ namespace VTS {
         /// </summary>
         /// <param name="onUnsubscribe">Callback executed upon successfully unsubscribing from the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void UnsubscribeFromModelConfigChangedEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError){
+        public void UnsubscribeFromModelConfigChangedEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSModelConfigChangedEventSubscriptionRequestData, VTSModelConfigChangedEventData>("ModelConfigChangedEvent", false, null, DoNothingCallback, onUnsubscribe, onError);
         }
 
@@ -909,7 +1109,8 @@ namespace VTS {
         /// <param name="onEvent">Callback to execute upon receiving an event.</param>
         /// <param name="onSubscribe">Callback executed upon successfully subscribing to the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void SubscribeToModelMovedEvent(Action<VTSModelMovedEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError){
+        public void SubscribeToModelMovedEvent(Action<VTSModelMovedEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSModelMovedEventSubscriptionRequestData, VTSModelMovedEventData>("ModelMovedEvent", true, new VTSModelMovedEventConfigOptions(), onEvent, onSubscribe, onError);
         }
 
@@ -918,9 +1119,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onUnsubscribe">Callback executed upon successfully unsubscribing from the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void UnsubscribeFromModelMovedEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError){
+        public void UnsubscribeFromModelMovedEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSModelMovedEventSubscriptionRequestData, VTSModelMovedEventData>("ModelMovedEvent", false, null, DoNothingCallback, onUnsubscribe, onError);
-        }        
+        }
 
         /// <summary>
         /// Subscribes to the Model Outline Event.
@@ -932,8 +1134,9 @@ namespace VTS {
         /// <param name="onEvent">Callback to execute upon receiving an event.</param>
         /// <param name="onSubscribe">Callback executed upon successfully subscribing to the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void SubscribeToModelOutlineEvent(VTSModelOutlineEventConfigOptions config, Action<VTSModelOutlineEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError){
-            SubscribeToEvent<VTSModelOutlineEventSubscriptionRequestData, VTSModelOutlineEventData>("ModelOutlineEvent", true,config, onEvent, onSubscribe, onError);
+        public void SubscribeToModelOutlineEvent(VTSModelOutlineEventConfigOptions config, Action<VTSModelOutlineEventData> onEvent, Action<VTSEventSubscriptionResponseData> onSubscribe, Action<VTSErrorData> onError)
+        {
+            SubscribeToEvent<VTSModelOutlineEventSubscriptionRequestData, VTSModelOutlineEventData>("ModelOutlineEvent", true, config, onEvent, onSubscribe, onError);
         }
 
         /// <summary>
@@ -941,9 +1144,10 @@ namespace VTS {
         /// </summary>
         /// <param name="onUnsubscribe">Callback executed upon successfully unsubscribing from the event.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
-        public void UnsubscribeFromModelOutlineEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError){
+        public void UnsubscribeFromModelOutlineEvent(Action<VTSEventSubscriptionResponseData> onUnsubscribe, Action<VTSErrorData> onError)
+        {
             SubscribeToEvent<VTSModelOutlineEventSubscriptionRequestData, VTSModelOutlineEventData>("ModelOutlineEvent", false, null, DoNothingCallback, onUnsubscribe, onError);
-        }  
+        }
 
         #endregion
 
@@ -953,69 +1157,33 @@ namespace VTS {
         /// Static VTS API callback method which does nothing. Saves you from needing to make a new inline function each time.
         /// </summary>
         /// <param name="response"></param>
-        protected static void DoNothingCallback(VTSMessageData response){
+        protected static void DoNothingCallback(VTSEventData response)
+        {
             // Do nothing!
         }
 
-        private static Regex ALPHANUMERIC = new Regex(@"\W|");
-        private static string SanitizeParameterName(string name){
+        private static readonly Regex ALPHANUMERIC = new Regex(@"\W|");
+        private static string SanitizeParameterName(string name)
+        {
             // between 4 and 32 chars, alphanumeric, underscores allowed
             string output = name;
             output = ALPHANUMERIC.Replace(output, "");
             output.PadLeft(4, 'X');
             output = output.Substring(0, Math.Min(output.Length, 31));
+
             return output;
 
         }
 
-        private static string EncodeIcon(Texture2D icon){
-            try{
-                if(icon.width != 128 && icon.height != 128){
-                    Debug.LogWarning("Icon resolution must be exactly 128*128 pixels!");
-                    return null;
-                }
-                return Convert.ToBase64String(icon.EncodeToPNG());
-            }catch(Exception e){
-                Debug.LogError(e);
-            }
-            return null;
+        private static string InjectParameterModeToString(VTSInjectParameterMode mode)
+        {
+            return mode.GetDescription() ?? VTSInjectParameterMode.SET.GetDescription();
         }
 
-        private static string InjectParameterModeToString(VTSInjectParameterMode mode){
-            if(mode == VTSInjectParameterMode.ADD){
-                return "add";
-            }else if(mode == VTSInjectParameterMode.SET){
-                return "set";
-            }
-            return "set";
+        private static string MotionCurveToString(VTSItemMotionCurve curve)
+        {
+            return curve.GetDescription() ?? VTSItemMotionCurve.LINEAR.GetDescription();
         }
-
-        private static string MotionCurveToString(VTSItemMotionCurve curve){
-            if(curve == VTSItemMotionCurve.LINEAR){
-                return "linear";
-            }else if(curve == VTSItemMotionCurve.EASE_IN){
-                return "easeIn";
-            }else if(curve == VTSItemMotionCurve.EASE_OUT){
-                return "easeOut";
-            }else if(curve == VTSItemMotionCurve.EASE_BOTH){
-                return "easeBoth";
-            }else if(curve == VTSItemMotionCurve.OVERSHOOT){
-                return "overshoot";
-            }else if(curve == VTSItemMotionCurve.ZIP){
-                return "zip";
-            }
-            return "linear";
-        }
-
-        /// <summary>
-        /// Converts the VTS Pair struct to a Unity Vector2 struct.
-        /// </summary>
-        /// <param name="pair">The Pair to convert</param>
-        /// <returns></returns>
-        public static Vector2 PairToVector2(Pair pair){
-            return new Vector2(pair.x, pair.y);
-        }
-
         #endregion
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Threading.Tasks;
+﻿using System;
 
 namespace VTS.Networking{
     /// <summary>
@@ -21,7 +21,7 @@ namespace VTS.Networking{
         /// <param name="onDisconnect">Callback executed upon disconnecting from the URL.</param>
         /// <param name="onError">Callback executed upon receiving an error.</param>
         /// <returns></returns>
-        void Start(string URL, System.Action onConnect, System.Action onDisconnect, System.Action onError);
+        void Start(string URL, Action onConnect, Action onDisconnect, Action onError);
         /// <summary>
         /// Closes the websocket.
         /// 
